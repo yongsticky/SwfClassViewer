@@ -5,13 +5,13 @@ package client
 	
 	public class SwfUtil {
 		private static var bytes:ByteArray;
-		private static var classNames:Vector.<String> ;
+		private static var classNames:Array;
 		private static var tagNum:int ;	
 		                
-		public static function getSWFClassName(swfBytes:ByteArray) : Vector.<String> 
+		public static function getSWFClassName(swfBytes:ByteArray) : Array 
 		{
 			tagNum = 0 ;
-			classNames = new Vector.<String>();
+			classNames = new Array();
 			bytes = new ByteArray();
 			bytes.writeBytes(swfBytes);
 			bytes.position = 0;

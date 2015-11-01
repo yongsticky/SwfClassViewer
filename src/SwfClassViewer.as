@@ -24,6 +24,8 @@ package
 		{			
 			_starling = new Starling(Viewer, stage);
 			_starling.start();
+			_starling.showStats = true;
+			_starling.antiAliasing = 2;
 		}
 	}
 }

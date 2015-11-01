@@ -1,12 +1,16 @@
 package client
 {
+	import flash.display.Bitmap;
+	import flash.display.BitmapData;
 	import flash.display.Loader;
 	import flash.display.LoaderInfo;
-	import flash.events.ErrorEvent;
 	import flash.events.Event;
 	import flash.events.IOErrorEvent;
 	import flash.events.SecurityErrorEvent;
 	import flash.filesystem.File;
+	import flash.media.Sound;
+	import flash.media.SoundChannel;
+	import flash.media.SoundTransform;
 	import flash.net.FileFilter;
 	import flash.net.URLRequest;
 	
@@ -32,16 +36,25 @@ package client
 		[Embed(source="../../resource/right.png")]
 		private static const RightArrowTexture:Class;
 		
+		[Embed(source="../../resource/play.png")]
+		private static const AudioPlayPNG:Class;
+		
+		
 		
 		private var _selectButton:Button;
 		private var _rightButton:Button;
-		private var _leftButton:Button;
-		private var _itemView:Sprite;
+		private var _leftButton:Button;		
 		private var _presentTextfield:TextField;
+		private var _oldImage:Image;
 		
 		private var _bmdArr:Array = null;
+		private var _bmdInfoArr:Array = null;
 				
-		private var _nextImageIndex:int = 0;
+		private var _curIndex:int = 0;
+		
+		private var _audioPngTexture:Texture;
+		
+		private var _nowPlayingSoundchannel:SoundChannel;
 		
 		public function Viewer()
 		{
@@ -54,6 +67,7 @@ package client
 		public function initialize() : void
 		{	
 			_bmdArr = new Array();
+			_bmdInfoArr = new Array();
 			
 			// 查看
 			addItemView();
@@ -69,16 +83,7 @@ package client
 		}
 		
 		private function addItemView() : void
-		{
-			_itemView = new Sprite();
-			
-			_itemView.width = 480;
-			_itemView.height = 400;
-			
-			_itemView.x = (stage.stageWidth - _itemView.width) >> 1;
-			_itemView.y = 80;
-			
-			addChild(_itemView);
+		{			
 		}
 		
 		private function addTextPresent() : void
@@ -125,7 +130,7 @@ package client
 			_leftButton.y = _rightButton.y = (stage.stageHeight - _leftButton.height) >> 1;
 			
 			_leftButton.addEventListener(TouchEvent.TOUCH, onTouchLeft);
-			_leftButton.addEventListener(TouchEvent.TOUCH, onTouchRight);
+			_rightButton.addEventListener(TouchEvent.TOUCH, onTouchRight);
 			
 			
 			addChild(_leftButton);
@@ -134,13 +139,21 @@ package client
 		}
 		
 		private function onTouchLeft(event:TouchEvent):void
-		{			
-			showNext();
+		{	
+			var touch:Touch = event.getTouch(_leftButton);
+			if (touch && touch.phase == TouchPhase.ENDED)
+			{
+				showPrev();
+			}
 		}
 		
 		private function onTouchRight(event:TouchEvent):void
-		{			
-			showPrev();
+		{
+			var touch:Touch = event.getTouch(_rightButton);
+			if (touch && touch.phase == TouchPhase.ENDED)
+			{
+				showNext();				
+			}
 		}
 		
 		private function onTouchSelect(event:TouchEvent):void
@@ -174,14 +187,15 @@ package client
 		protected function onLoadSwfComplete(event:flash.events.Event) : void
 		{	
 			var loaderInfo:LoaderInfo = event.target as LoaderInfo;			
-			var clsVec:Vector.<String> = SwfUtil.getSWFClassName(loaderInfo.bytes);
-			for each(var clsName:String in clsVec)
+			var clsArr:Array = SwfUtil.getSWFClassName(loaderInfo.bytes);
+			for each(var clsName:String in clsArr)
 			{
 				var cls:Class = Object(loaderInfo).applicationDomain.getDefinition(clsName);
-				_bmdArr.push(new cls());				
+				_bmdArr.push(new cls());
+				_bmdInfoArr.push(clsName);
 			}
 			
-			showNext();
+			showIt(0);
 		}
 		
 		protected function onIoError(event:IOErrorEvent):void
@@ -197,32 +211,121 @@ package client
 		
 		protected function showNext() : void
 		{
-			if (_nextImageIndex >= _bmdArr.length)
+			if (_curIndex == _bmdArr.length-1)
 			{
-				_nextImageIndex = 0;
+				_curIndex = 0;
 			}
-					
-			
-			var t:Texture = Texture.fromBitmapData(_bmdArr[_nextImageIndex++]);
-			
-			if (_itemView.numChildren)
+			else
 			{
-				_itemView.removeChildAt(0, true);
+				_curIndex ++;
 			}
 			
-			_itemView.addChild(new Image(t));			
+			if (_nowPlayingSoundchannel)
+			{
+				_nowPlayingSoundchannel.stop();
+			}
 			
+			showIt(_curIndex);
 		}
 		
 		protected function showPrev() : void
 		{			
+			if (_curIndex == 0)
+			{
+				_curIndex = _bmdArr.length-1;
+			}
+			else
+			{
+				_curIndex --;
+			}
+			
+			if (_nowPlayingSoundchannel)
+			{
+				_nowPlayingSoundchannel.stop();
+			}
+			
+			showIt(_curIndex);
+		}
+		
+		private function showIt(index:int) : void
+		{
+			var obj:* = _bmdArr[index];			
+			var t:Texture = null;
+			
+			if (obj is BitmapData)
+			{
+				t = Texture.fromBitmapData(obj);
+			}
+			else if (obj is Bitmap)
+			{
+				t = Texture.fromBitmap(obj);
+			}
+			else if (obj is Sound)
+			{
+				if (!_audioPngTexture)
+				{
+					_audioPngTexture = Texture.fromBitmap(new AudioPlayPNG());
+				}
+				
+				t = _audioPngTexture;
+			}
+			else
+			{
+				throw new Error("unkown media type.");
+			}
+			
+			
+			var img:Image = new Image(t);
+			img.addEventListener(TouchEvent.TOUCH, onTouch);
+			
+			
+			var text:String =  _bmdInfoArr[index] + "(" + img.width + "*" + img.height + ")";
+			_presentTextfield.text = text; 
+			
+			var realWidth:int = img.width < 480 ? img.width:480;
+			var realHeight:int = img.height < 400 ? img.height:400;
+			
+			img.x = (stage.stageWidth - realWidth) >> 1;
+			img.y = 150 + (stage.stageHeight - 180 - realHeight) >> 1;
+			
+			if (img.width > 480)
+			{
+				img.scaleX = 480 / img.width;
+			}
+			
+			if (img.height > 400)
+			{
+				img.scaleY = 400 / img.height;
+			}
+			
+			
+			if (_oldImage)
+			{
+				_oldImage.removeEventListener(TouchEvent.TOUCH, onTouch);
+				removeChild(_oldImage, true);
+			}
+			
+			addChild(img);			
+			_oldImage = img;
+			
 			
 		}
 		
-		
-		
-		
-		
+		private function onTouch(event:TouchEvent):void
+		{
+			var touch:Touch = event.getTouch(_oldImage);
+			if (touch)
+			{
+				if (touch.phase == TouchPhase.ENDED)
+				{					
+					var obj:Sound = _bmdArr[_curIndex] as Sound;
+					if (obj)
+					{						
+						_nowPlayingSoundchannel = obj.play(0, 0, new SoundTransform(1));						
+					}
+				}
+			}
+		}		
 		
 	}
 }
